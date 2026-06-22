@@ -36,7 +36,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    sameSite: 'lax',
+    sameSite: 'none',
     secure: false,
   },
 }));
@@ -71,7 +71,7 @@ app.post('/api/auth/signin', async (req, res) => {
   if (!match) return res.status(400).json({ message: 'Invalid email or password' });
   req.session.userId = profile.id;
   req.session.email = profile.email;
-  res.json({});
+  res.json({ id: profile.id, email: profile.email, display_name: profile.display_name, role: profile.role });
 });
 
 app.post('/api/auth/signup', async (req, res) => {
@@ -92,7 +92,7 @@ app.post('/api/auth/signup', async (req, res) => {
   const profile = inserted.rows[0];
   req.session.userId = profile.id;
   req.session.email = profile.email;
-  res.json({});
+  res.json({ id: profile.id, email: profile.email, display_name: profile.display_name, role: profile.role });
 });
 
 app.post('/api/auth/signout', (req, res) => {

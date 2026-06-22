@@ -40,11 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     async signIn(email, password) {
       await api.auth.signin(email, password);
-      setProfile(await api.auth.me());
+      const user = await api.auth.me();
+      setProfile(user);
     },
     async signUp(email, password) {
       await api.auth.signup(email, password);
-      setProfile(await api.auth.me());
+      const user = await api.auth.me();
+      setProfile(user);
     },
     async signOut() {
       await api.auth.signout();

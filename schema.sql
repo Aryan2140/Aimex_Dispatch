@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS packaging_photos (
   taken_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
 INSERT INTO dispatch_providers (name, key, is_active, sort_order)
 VALUES
   ('Australia Post', 'australia_post', true, 10),
