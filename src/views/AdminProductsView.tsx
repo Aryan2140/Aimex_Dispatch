@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Boxes, Loader2, Plus, Search, Trash2, Pencil, X } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import type { Product } from '../types';
 
 export default function AdminProductsView() {
@@ -14,10 +14,13 @@ export default function AdminProductsView() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.from('products').select('*').order('name').limit(500);
-    if (error) console.error(error);
-    setProducts((data as Product[]) ?? []);
-    setLoading(false);
+    try {
+      setProducts(await api.products.list());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = q.trim()
@@ -90,14 +93,11 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
         sku: sku.trim() || null,
         barcode: barcode.trim() || null,
         description: description.trim() || null,
-        updated_at: new Date().toISOString(),
       };
       if (product) {
-        const { error } = await supabase.from('products').update(payload).eq('id', product.id);
-        if (error) throw error;
+        await api.products.update(product.id, payload);
       } else {
-        const { error } = await supabase.from('products').insert(payload);
-        if (error) throw error;
+        await api.products.create(payload);
       }
       onSaved();
     } catch (err) {
@@ -111,8 +111,7 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     if (!product) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('products').delete().eq('id', product.id);
-      if (error) throw error;
+      await api.products.delete(product.id);
       onSaved();
     } catch (err) {
       setError((err as Error).message);

@@ -1,12 +1,12 @@
 export type Profile = {
-  id: string;
+  id: number | string;
   email: string;
   display_name: string | null;
   role: 'admin' | 'user';
 };
 
 export type DispatchProvider = {
-  id: string;
+  id: number | string;
   name: string;
   key: string;
   carrier_code: string | null;
@@ -15,7 +15,7 @@ export type DispatchProvider = {
 };
 
 export type Product = {
-  id: string;
+  id: number | string;
   sku: string | null;
   name: string;
   description: string | null;
@@ -23,22 +23,22 @@ export type Product = {
 };
 
 export type OrderItem = {
-  id: string;
-  order_id: string;
-  product_id: string | null;
+  id: number | string;
+  order_id: number | string;
+  product_id: number | string | null;
   name: string;
   sku: string | null;
   quantity: number;
 };
 
 export type Order = {
-  id: string;
-  created_by: string;
+  id: number | string;
+  created_by: number | string;
   customer_name: string;
   customer_address: string;
   customer_phone: string | null;
   customer_email: string | null;
-  dispatch_provider_id: string | null;
+  dispatch_provider_id: number | string | null;
   tracking_number: string | null;
   tracking_status: Record<string, unknown> | null;
   carrier_status_text: string | null;
@@ -48,12 +48,12 @@ export type Order = {
   created_at: string;
   updated_at: string;
   order_items?: OrderItem[];
-  dispatch_providers?: DispatchProvider | null;
+  dispatch_provider?: DispatchProvider | null;
 };
 
 export type PackagingPhoto = {
-  id: string;
-  order_id: string;
+  id: number | string;
+  order_id: number | string;
   storage_path: string;
   taken_at: string;
 };

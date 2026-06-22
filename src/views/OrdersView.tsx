@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Loader2, Search, ChevronRight, Package as PackageIcon, Truck } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { signedUrl } from '../lib/photos';
+import { api } from '../lib/api';
+import { photoUrl } from '../lib/photos';
 import type { Order, DispatchProvider } from '../types';
 
 export default function OrdersView({ onCreate }: { onCreate: () => void }) {
@@ -12,34 +12,29 @@ export default function OrdersView({ onCreate }: { onCreate: () => void }) {
   const [selected, setSelected] = useState<Order | null>(null);
 
   useEffect(() => {
-    supabase.from('dispatch_providers').select('*').order('sort_order').then(({ data }) => {
-      setProviders((data as DispatchProvider[]) ?? []);
-    });
+    api.providers.list().then(setProviders).catch(console.error);
   }, []);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    supabase
-      .from('orders')
-      .select('*, order_items(*), dispatch_providers(*)')
-      .order('created_at', { ascending: false })
-      .limit(100)
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) console.error(error);
-        setOrders((data as Order[]) ?? []);
-        setLoading(false);
-      });
-    return () => { active = false; };
+    api.orders.list().then((data) => {
+      if (!active) return;
+      setOrders(data ?? []);
+    }).catch(console.error).finally(() => {
+      if (active) setLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filtered = q.trim()
-    ? orders.filter((o) =>
-        [o.customer_name, o.tracking_number, o.customer_address].join(' ').toLowerCase().includes(q.toLowerCase()))
+    ? orders.filter((o) => [o.customer_name, o.tracking_number, o.customer_address].join(' ').toLowerCase().includes(q.toLowerCase()))
     : orders;
 
-  function providerName(id: string | null) {
+  function providerName(id: number | string | null) {
     if (!id) return 'Unknown';
     return providers.find((p) => p.id === id)?.name ?? 'Unknown';
   }
@@ -109,12 +104,18 @@ export default function OrdersView({ onCreate }: { onCreate: () => void }) {
 }
 
 function OrderDetailModal({
-  order, providerName, onClose,
+  order,
+  providerName,
+  onClose,
 }: { order: Order; providerName: string; onClose: () => void }) {
   const [labelUrl, setLabelUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (order.label_photo_path) signedUrl('label-photos', order.label_photo_path).then(setLabelUrl);
+    if (!order.label_photo_path) {
+      setLabelUrl(null);
+      return;
+    }
+    setLabelUrl(photoUrl(order.label_photo_path));
   }, [order.label_photo_path]);
 
   return (

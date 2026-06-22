@@ -21,9 +21,6 @@ export default function SettingsView() {
   const [checks, setChecks] = useState<Record<string, TrackResult | null>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
-  // Probe the carrier-track edge function with a sample tracking number for each carrier.
-  // The function returns a "not configured" note in its body when the env secrets are missing,
-  // so we use that to show status without ever exposing the secret values.
   async function check(carrier: CarrierCheck) {
     setBusy((b) => ({ ...b, [carrier.key]: true }));
     try {
@@ -31,7 +28,10 @@ export default function SettingsView() {
       setChecks((c) => ({ ...c, [carrier.key]: result }));
     } catch (err) {
       setChecks((c) => ({ ...c, [carrier.key]: {
-        carrier: carrier.name, trackingNumber: 'TEST0000', status: `error: ${(err as Error).message}`, events: [],
+        carrier: carrier.name,
+        trackingNumber: 'TEST0000',
+        status: `error: ${(err as Error).message}`,
+        events: [],
       }}));
     } finally {
       setBusy((b) => ({ ...b, [carrier.key]: false }));
@@ -55,7 +55,7 @@ export default function SettingsView() {
             <Info className="mt-0.5 h-4 w-4 text-blue-600" />
             <div className="text-sm text-blue-900">
               <p className="font-semibold">Your account is an admin</p>
-              <p className="text-sm text-blue-700">You can manage products and add more users have them sign up with their own email.</p>
+              <p className="text-sm text-blue-700">You can manage products and help others sign up with their own email.</p>
             </div>
           </div>
         </div>
@@ -101,7 +101,7 @@ export default function SettingsView() {
                 </div>
                 <div className="mt-3 rounded-lg bg-slate-50 p-2.5 text-xs text-slate-500">
                   {isAdmin
-                    ? <>Add the keys above as Supabase Edge Function secrets, then tap “Re-check”. Note: tracking APIs return shipment <em>status</em> only. Customer name and order items must always be entered manually.</>
+                    ? <>Add the keys above on the server, then tap “Re-check”. Note: tracking APIs return shipment <em>status</em> only. Customer name and order items must always be entered manually.</>
                     : <>Ask the administrator to set the carrier API keys on the server.</>}
                 </div>
                 <button onClick={() => check(c)} disabled={isBusy} className="btn-secondary mt-3 h-8 text-xs">
@@ -116,7 +116,7 @@ export default function SettingsView() {
       <div className="card p-4">
         <h2 className="mb-1 text-sm font-semibold text-slate-700">About label scanning</h2>
         <p className="text-sm text-slate-500">
-          Photograph the shipping label to keep it as evidence against the order. The carrier is auto-detected from the tracking-number format you enter. Carrier Tracking APIs only return shipment status — never the customer name, address, or item quantities — so those fields are captured manually from the product search.
+          Photograph the shipping label to keep it as evidence against the order. The carrier is auto-detected from the tracking-number format you enter. Carrier tracking is handled by the local server.
         </p>
       </div>
     </div>

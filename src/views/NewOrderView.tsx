@@ -2,19 +2,19 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Camera, Trash2, Check, Search, Plus, Minus, Truck, ImageOff, AlertCircle, Loader2, ScanLine, Sparkles,
 } from 'lucide-react';
-import { supabase, LABEL_BUCKET } from '../lib/supabase';
-import { uploadPhoto } from '../lib/photos';
+import { api } from '../lib/api';
+import { uploadLabelPhoto } from '../lib/photos';
 import { detectProviderFromTracking } from '../lib/carrierDetect';
 import { trackShipment, isConfiguredNote, type TrackResult } from '../lib/carrierTrack';
-import { runOcr } from '../lib/ocr';
 import { parseLabel, type ParsedLabel } from '../lib/labelParse';
+import { runOcr } from '../lib/ocr';
 import type { DispatchProvider, Product, OrderItem } from '../types';
 
 type DraftItem = { product_id: string | null; name: string; sku: string | null; quantity: number };
 
 export default function NewOrderView({ onDone }: { onDone: () => void }) {
   const [providers, setProviders] = useState<DispatchProvider[]>([]);
-  const [providerId, setProviderId] = useState<string>('');
+  const [providerId, setProviderId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -36,18 +36,15 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('dispatch_providers').select('*').eq('is_active', true).order('sort_order').then(({ data }) => {
-      setProviders((data as DispatchProvider[]) ?? []);
-    });
+    api.providers.list().then(setProviders).catch(console.error);
   }, []);
 
-  // Auto-suggest a provider based on the tracking number format.
   useEffect(() => {
     if (!trackingNumber || providerId) return;
     const key = detectProviderFromTracking(trackingNumber);
     if (!key) return;
     const match = providers.find((p) => p.key === key);
-    if (match) setProviderId(match.id);
+    if (match) setProviderId(String(match.id));
   }, [trackingNumber, providers, providerId]);
 
   const canSave = useMemo(
@@ -64,9 +61,8 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
       const file = input.files?.[0];
       if (!file) return;
       const url = URL.createObjectURL(file);
-      setLabelPreview((prev) => (prev ? (URL.revokeObjectURL(prev), null) : null));
+      setLabelPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
       setLabelBlob(file);
-      setLabelPreview(url);
     };
     input.click();
   }
@@ -79,8 +75,6 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
     setOcrProgress(0);
   }
 
-  // Run in-browser OCR against the captured label and pre-fill editable fields.
-  // All processing is on-device; nothing is sent to a server. The operator reviews.
   async function readLabel() {
     if (!labelBlob) return;
     setError(null);
@@ -94,7 +88,7 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
       if (result.trackingNumber && !trackingNumber) setTrackingNumber(result.trackingNumber);
       if (result.carrierKey && !providerId) {
         const match = providers.find((p) => p.key === result.carrierKey);
-        if (match) setProviderId(match.id);
+        if (match) setProviderId(String(match.id));
       }
       if (result.name && !customerName) setCustomerName(result.name);
       if (result.addressLines.length > 0 && !customerAddress) setCustomerAddress(result.addressLines.join(', '));
@@ -110,9 +104,9 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
     setError(null);
     setTrack(null);
     if (!trackingNumber.trim()) return;
-    const carrier = providers.find((p) => p.id === providerId)?.key ?? '';
+    const carrier = providers.find((p) => String(p.id) === providerId)?.key ?? '';
     if (carrier !== 'australia_post' && carrier !== 'couriers_please') {
-      const provName = providers.find((p) => p.id === providerId)?.name ?? carrier;
+      const provName = providers.find((p) => String(p.id) === providerId)?.name ?? carrier;
       setTrack({
         carrier: provName,
         trackingNumber,
@@ -147,34 +141,27 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
     if (!canSave) return;
     setSaving(true);
     try {
-      let labelPath: string | null = null;
-      if (labelBlob) labelPath = await uploadPhoto(LABEL_BUCKET, labelBlob);
-
-      const orderInsert = {
+      const labelPhotoPath = labelBlob ? await uploadLabelPhoto(labelBlob) : null;
+      const payload = {
         customer_name: customerName.trim(),
         customer_address: customerAddress.trim(),
         customer_phone: customerPhone.trim() || null,
-        dispatch_provider_id: providerId || null,
+        customer_email: null,
+        dispatch_provider_id: providerId ? Number(providerId) : null,
         tracking_number: trackingNumber.trim() || null,
-        label_photo_path: labelPath,
-        tracking_status: track ? (track as unknown) : null,
-        carrier_status_text: track?.status ?? null,
+        carrier_status_text: track?.status || null,
+        label_photo_path: labelPhotoPath,
         notes: notes.trim() || null,
+        status: 'captured' as const,
+        order_items: items.map((item) => ({
+          product_id: item.product_id ? Number(item.product_id) : null,
+          name: item.name.trim(),
+          sku: item.sku,
+          quantity: item.quantity,
+        })),
       };
-      const { data: order, error: insertErr } = await supabase
-        .from('orders').insert(orderInsert).select().single();
-      if (insertErr) throw insertErr;
 
-      const itemRows = items.map((i) => ({
-        order_id: order.id,
-        product_id: i.product_id,
-        name: i.name.trim(),
-        sku: i.sku,
-        quantity: i.quantity,
-      }));
-      const { error: itemsErr } = await supabase.from('order_items').insert(itemRows);
-      if (itemsErr) throw itemsErr;
-
+      await api.orders.create(payload);
       if (labelPreview) URL.revokeObjectURL(labelPreview);
       onDone();
     } catch (err) {
@@ -191,7 +178,6 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
         <p className="text-sm text-slate-500">Capture a shipping order from a label or by manual entry.</p>
       </div>
 
-      {/* Label photo capture */}
       <section className="card p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">Shipping label photo</h2>
         {labelPreview ? (
@@ -229,7 +215,6 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
         </p>
       </section>
 
-      {/* Carrier + tracking */}
       <section className="card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Carrier &amp; tracking</h2>
@@ -238,7 +223,7 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
           <label className="label" htmlFor="provider">Dispatched by</label>
           <select id="provider" className="input" value={providerId} onChange={(e) => setProviderId(e.target.value)}>
             <option value="">Select carrier…</option>
-            {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {providers.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
           </select>
         </div>
         <div>
@@ -263,7 +248,6 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
         )}
       </section>
 
-      {/* Customer details — these are NOT returned by carrier APIs */}
       <section className="card p-4 space-y-3">
         <h2 className="text-sm font-semibold text-slate-700">Customer details</h2>
         <div>
@@ -280,7 +264,6 @@ export default function NewOrderView({ onDone }: { onDone: () => void }) {
         </div>
       </section>
 
-      {/* Order items autocomplete */}
       <section className="card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Order items</h2>
@@ -346,19 +329,19 @@ function ProductRow({
       return;
     }
     setSearching(true);
-    const { data } = await supabase
-      .from('products')
-      .select('id, sku, name, description, barcode')
-      .ilike('name', `%${q.trim()}%`)
-      .order('name')
-      .limit(8);
-    setResults((data as Product[]) ?? []);
-    setSearching(false);
+    try {
+      setResults(await api.products.list(q.trim()));
+    } catch (err) {
+      console.error(err);
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
   }
 
   function pick(p: Product) {
     setQuery(p.name);
-    onChange({ name: p.name, product_id: p.id, sku: p.sku });
+    onChange({ name: p.name, product_id: String(p.id), sku: p.sku });
     setResults([]);
   }
 

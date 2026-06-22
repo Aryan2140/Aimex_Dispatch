@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Camera, Loader2, Trash2, Package as PackageIcon, X, AlertCircle, ImageOff } from 'lucide-react';
-import { supabase, PACKAGING_BUCKET } from '../lib/supabase';
-import { uploadPhoto, signedUrl, deletePhoto } from '../lib/photos';
+import { api } from '../lib/api';
+import { photoUrl } from '../lib/photos';
 import type { Order, PackagingPhoto } from '../types';
 
 export default function PackagingView() {
@@ -14,29 +14,18 @@ export default function PackagingView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase
-      .from('orders')
-      .select('id, customer_name, tracking_number, created_at')
-      .order('created_at', { ascending: false })
-      .limit(100)
-      .then(({ data, error }) => {
-        if (error) console.error(error);
-        setOrders((data as Order[]) ?? []);
-        setLoading(false);
-      });
+    api.orders.list().then(setOrders).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   async function loadPhotos(order: Order) {
     setPhotos([]);
     setPhotoUrls({});
-    const { data } = await supabase.from('packaging_photos').select('*').eq('order_id', order.id).order('taken_at', { ascending: true });
-    const list = (data as PackagingPhoto[]) ?? [];
+    const list = await api.photos.listPackaging(order.id);
     setPhotos(list);
     const urls: Record<string, string> = {};
-    await Promise.all(list.map(async (p) => {
-      const u = await signedUrl(PACKAGING_BUCKET, p.storage_path);
-      if (u) urls[p.id] = u;
-    }));
+    list.forEach((photo) => {
+      urls[photo.id] = photoUrl(photo.storage_path);
+    });
     setPhotoUrls(urls);
   }
 
@@ -55,17 +44,9 @@ export default function PackagingView() {
       setError(null);
       setUploading(true);
       try {
-        const path = await uploadPhoto(PACKAGING_BUCKET, file);
-        const { data, error } = await supabase
-          .from('packaging_photos')
-          .insert({ order_id: activeOrder.id, storage_path: path })
-          .select()
-          .single();
-        if (error) throw error;
-        const newPhoto = data as PackagingPhoto;
-        setPhotos((p) => [...p, newPhoto]);
-        const url = await signedUrl(PACKAGING_BUCKET, path);
-        if (url) setPhotoUrls((u) => ({ ...u, [newPhoto.id]: url }));
+        const photo = await api.photos.uploadPackaging(activeOrder.id, file);
+        setPhotos((prev) => [...prev, photo]);
+        setPhotoUrls((prev) => ({ ...prev, [photo.id]: photoUrl(photo.storage_path) }));
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -77,11 +58,10 @@ export default function PackagingView() {
 
   async function removePhoto(photo: PackagingPhoto) {
     try {
-      await deletePhoto(PACKAGING_BUCKET, photo.storage_path);
-      await supabase.from('packaging_photos').delete().eq('id', photo.id);
-      setPhotos((p) => p.filter((x) => x.id !== photo.id));
-      setPhotoUrls((u) => {
-        const next = { ...u };
+      await api.photos.deletePackaging(photo.id);
+      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      setPhotoUrls((prev) => {
+        const next = { ...prev };
         delete next[photo.id];
         return next;
       });
@@ -141,7 +121,8 @@ export default function PackagingView() {
 
           {error && (
             <div className="mt-2 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
-              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" /><span>{error}</span>
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
